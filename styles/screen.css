@@ -1,0 +1,26 @@
+body  {
+  font-family: Verdana;
+  font-size: 10pt;
+}
+
+canvas {
+	border-style:solid;
+	border-width:1px;
+	position: absolute;
+	top: 0px;
+	left: 0px;
+}
+
+canvasUi {
+	border-style:solid;
+	border-width:1px;
+	position: absolute;
+	top: 0px;
+	left: 0px;
+}
+
+ul {
+	position: absolute;
+	top: 0px;
+	left: 960px;
+}

@@ -1,0 +1,980 @@
+var canvas = document.getElementById("canvas");
+var ctx = canvas.getContext("2d");
+var canvasUi = document.getElementById("canvasUi");
+var ctxUi = canvasUi.getContext("2d");
+
+var requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame ||
+	window.webkitRequestAnimationFrame || window.msRequestAnimationFrame;
+
+window.requestAnimationFrame = requestAnimationFrame;
+
+function animate(time) {           // Animation loop
+	update();
+	draw(time);                     // A function that draws the current animation frames
+	requestAnimationFrame(animate); // Keep the animation going
+};
+
+// Auxiliary Functions
+// ----------------------------------------
+function getRandomInt (min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+// Player Class
+// The Player Class will contain all of the player's actions and attributes.
+// ----------------------------------------
+Player = function() {
+	this.turnEnd = false;
+
+	// Player Stats
+	this.health = 100;
+	this.stamina = 10;
+	this.intellect = 10;
+	this.strength = 10;
+	
+	// Inventory
+	this.inventory = [];
+	
+	this.makePlayer = function(x, y, w, h) {
+		this.rect = new Rectangle(x, y, w, h);
+		this.rect.color = new Color(120, 120, 120, 1);
+	}
+	
+	// Updates the player
+	this.Move = function() {
+		// Player Input
+		// Up
+		if (input.w == true && this.turnEnd == false) {
+			player.rect.y -= gameCell;
+			this.turnEnd = true;
+			ctx.translate(0, +gameCell);
+		}
+		
+		// Down
+		else if (input.s == true && this.turnEnd == false) {
+			player.rect.y += gameCell;
+			this.turnEnd = true;
+			ctx.translate(0, -gameCell);
+		}
+		
+		// Left
+		else if (input.a == true && this.turnEnd == false) {
+			player.rect.x -= gameCell;
+			this.turnEnd = true;
+			ctx.translate(+gameCell, 0);
+		}
+		
+		// Right
+		 else if (input.d == true && this.turnEnd == false) {
+			player.rect.x += gameCell;
+			this.turnEnd = true;
+			ctx.translate(-gameCell, 0);
+		}
+		
+		if (input.w == false && input.a == false && input.s == false && input.d == false) {
+			this.turnEnd = false;
+		}
+		
+		// Camera Movement
+		if (input.up == true) {
+			ctx.translate(0, +gameCell);
+		} else if (input.down == true) {
+			ctx.translate(0, -gameCell);
+		} else if (input.left == true) {
+			ctx.translate(+gameCell, 0);
+		} else if (input.right == true) {
+			ctx.translate(-gameCell, 0);
+		}		
+	}
+	
+	// Draws the Player
+	this.Draw = function() {
+		player.rect.Draw(ctx);
+	}
+}
+
+// Item Class
+Item = function(name, type, freq, start, color, str, vit, intel) {
+	this.color = color
+	this.name = name;
+	this.type = type;
+	this.freq = freq;
+	this.start = start;
+	this.str = str;
+	this.vit = vit;
+	this.intel = intel;
+}
+
+// UI Panel Class
+Ui = function(x, y, w,  h, type) {
+	this.x = x;
+	this.y = y;
+	this.height = h;
+	this.width = w;
+	this.type = type;
+	this.image;
+	this.contents = new Array;
+	this.rect = new Rectangle(this.x, this.y, this.width, this.height);
+	this.rect.color = new Color(50, 50, 50, 1);
+	
+	this.toggle = false;
+	this.inputRelease = true;
+	
+	// Text Box Specific
+	if (this.type == "textBox") {
+		this.addText = function(input) {
+			this.contents.push(input);
+			if (this.contents.length > 10) {
+				this.contents.RemoveAt(0);
+			}	
+		}
+	}	
+	
+	// Inventory Specific
+	
+	this.Draw = function() {
+		if (this.toggle == true) {
+			this.rect.Draw(ctxUi);
+			// Text Box Specific
+			if (this.type == "textBox") {
+				ctxUi.font = "12px Arial";
+				ctxUi.fillStyle = "black";
+				var boxTotal = this.contents.length;
+				for (i = 0; i < this.contents.length; i++) {
+					var n = this.contents.length - i - 1;
+					var deltaY = 14 * n; 
+					ctxUi.fillText(this.contents[i], this.x + 5, this.y + 12 + deltaY);
+				}
+			}
+			// Stat Specific
+			
+			// Inventory Specific
+			if (this.type == "inv") {
+				ctxUi.font = "12px Arial";
+				ctxUi.fillStyle = "black";
+				for (i = 0; i < player.inventory.length; i++) {
+					var n = player.inventory.length - i - 1;
+					var deltaY = 14 * n; 
+					ctxUi.fillText(player.inventory[i].name, this.x + 5, this.y + 12 + deltaY);
+				}
+			}
+		}
+	}
+}
+
+// Room Class
+// Handles the generation of rooms allowing specified ranges for size and cell size.
+// ----------------------------------------
+Room = function(xIn, yIn, roomMin, roomMax, cellIn) {
+	this.x = xIn;
+	this.y = yIn;
+	this.cellSize = cellIn;
+	this.roomWidth;
+	this.roomHeight;
+	this.totalWidth;
+	this.totalHeight
+	this.doorLocation;
+	this.visible = true;
+	
+	// Walls and floors
+	this.wallTile = new Array;
+	this.stairTile = new Array;
+	this.fogTile = new Array;
+	this.doorTile = new Array;
+	this.doorSide = getRandomInt(1, 4);
+	this.doorType = new Array;
+	this.floorTile = new Array;
+	
+	this.roomCount = 0;
+	this.roomSpace = new Array;
+	
+	// Items
+	var roomItemCount = getRandomInt(0, floorLevel);
+	
+	this.roomItems = new Array;
+	this.itemTile = new Array;
+	
+	// Room contents
+	this.generateFloor = function(seedX, seedY) {
+		this.roomWidth = getRandomInt(roomMin, roomMax);
+		this.roomHeight = getRandomInt(roomMin, roomMax);
+		this.totalWidth = this.cellSize * this.roomWidth;
+		this.totalHeight = this.cellSize * this.roomHeight;
+		
+		// Determine initial doors
+		this.doorCount = getRandomInt(1, 4);
+		
+		// Determine room contents
+		this.itemList = new Array;
+		var roomItems = getRandomInt(0, floorLevel);
+		
+		if (seedX == null || seedY == null) {
+			// Top wall generation
+			var topWallCursor = 0;
+			for (i = 0; i < this.roomWidth; i++) {
+				this.wallTile.push(new Rectangle(this.x + topWallCursor, this.y, this.cellSize, this.cellSize));
+				topWallCursor += this.cellSize;
+			}
+			
+			// Bottom wall generation
+			var bottomWallCursor = 0;
+			for (i = 0; i < this.roomWidth; i++) {
+				this.wallTile.push(new Rectangle(this.x + bottomWallCursor, (this.y + (this.totalHeight - this.cellSize)), this.cellSize, this.cellSize));
+				bottomWallCursor += this.cellSize;
+			}
+			
+			// Left wall generation
+			var leftWallCursor = 0;
+			for (i = 0; i < this.roomHeight; i++) {
+				this.wallTile.push(new Rectangle(this.x, this.y + leftWallCursor, this.cellSize, this.cellSize));
+				leftWallCursor += this.cellSize;
+			}
+			
+			// Right wall generation
+			var rightWallCursor = 0;
+			for (i = 0; i < this.roomHeight; i++) {
+				this.wallTile.push(new Rectangle(this.x + (this.totalWidth - this.cellSize), this.y + rightWallCursor, this.cellSize, this.cellSize));
+				rightWallCursor += this.cellSize;
+			}
+
+			// Fog generation
+			for (i = (this.x - (getRandomInt(40, 80) * this.cellSize)); i < (this.x + this.totalWidth + (getRandomInt(40, 80) * this.cellSize)); i += this.cellSize) {
+				for (j = (this.y - (getRandomInt(40, 80) * this.cellSize)); j < (this.y + this.totalHeight + (getRandomInt(40, 80) * this.cellSize)); j += this.cellSize) {
+					this.fogTile.push(new Rectangle(i, j, this.cellSize, this.cellSize));
+				}
+			}
+			
+			// Door generation
+			var pickedSide = []
+			for (i = 0; i < this.doorCount; i++) {
+				this.doorSide = getRandomInt(1, 4);
+				if (i != 0) {
+					while (pickedSide.Contains(this.doorSide) == true) {
+						this.doorSide = getRandomInt(1, 4);
+					}				
+				}
+				pickedSide.push(this.doorSide);
+				
+				if (this.totalWidth <= this.totalHeight) {
+					this.doorLocation = getRandomInt(2, this.roomWidth - 2);
+				} else {
+					this.doorLocation = getRandomInt(2, this.roomHeight - 2);
+				}
+				// Top
+				if (this.doorSide == 1) {
+					this.doorTile.push(new Rectangle(this.x + (this.doorLocation * this.cellSize) + 1, this.y + 1, this.cellSize - 2 , this.cellSize - 2));
+					this.doorType.push("top");
+				} 
+				// Bottom
+				else if (this.doorSide == 2) {
+					this.doorTile.push(new Rectangle(this.x + (this.doorLocation * this.cellSize) + 1, this.y + 1 + (this.totalHeight - this.cellSize), this.cellSize - 2 , this.cellSize - 2));
+					this.doorType.push("bottom");
+				}
+				// Left
+				if (this.doorSide == 3) {
+					this.doorTile.push(new Rectangle(this.x + 1, this.y + (this.doorLocation * this.cellSize) + 1, this.cellSize - 2 , this.cellSize - 2));
+					this.doorType.push("left");
+				} 
+				// Right
+				else if (this.doorSide == 4) {
+					this.doorTile.push(new Rectangle(this.x + (this.totalWidth - this.cellSize), this.y + (this.doorLocation * this.cellSize) + 1, this.cellSize - 2 , this.cellSize - 2));
+					this.doorType.push("right");
+				}
+			}
+			
+			// New room item generation
+			for (i = 0; i < roomItemCount; i++) {
+				var pickItemIndex = getRandomInt(0, (worldItems.length - 1));
+				var pickItem = worldItems[pickItemIndex];
+				var itemX = getRandomInt(2 , this.roomWidth - 2);
+				var itemY = getRandomInt(2, this.roomHeight - 2);
+				this.itemTile.push(new Rectangle(this.x + (itemX * this.cellSize), this.y + (itemY * this.cellSize), this.cellSize, this.cellSize));
+				this.itemTile[this.itemTile.length - 1].color = worldItems[pickItemIndex].color;
+				this.itemList.push(pickItem);
+			}
+
+			// Generate floor tiles
+			for (i = 0; i < this.roomWidth; i++) {
+				for (j = 0; j < this.roomHeight; j++) {
+					this.floorTile.push(new Rectangle(this.x + (i * this.cellSize), this.y + (j * this.cellSize), this.cellSize, this.cellSize));
+				}
+			}
+			
+			// Coloring tiles
+			// Color floor
+			for (i = 0; i < this.floorTile.length; i++) {
+				this.floorTile[i].color = new Color(200,200,200,1);
+			}
+			// Color walls
+			for (i = 0; i < this.wallTile.length; i++) {
+				this.wallTile[i].color = new Color(0,0,0,1);
+			}
+			// Color stairs
+			for (i = 0; i < this.stairTile.length; i++) {
+				this.stairTile[i].color = new Color(0,255,0,1);
+			}
+			// Color fog
+			for (i = 0; i < this.fogTile.length; i++) {
+				this.fogTile[i].color = new Color(50,50,50,1);
+			}
+			// Color doors
+			for (i = 0; i < this.doorTile.length; i++) {
+				this.doorTile[i].color = new Color(255, 0, 0, 1);
+			}
+			/*
+			// Color Items
+			for (i = 0; i < this.itemTile.length; i++) {
+				this.itemTile[i].color = new Color(0, 0, 255, 1);
+			}
+			*/
+		} 
+	}
+	
+	this.AddRoom = function(playerX, playerY, type) {
+		this.roomCount += 1;
+		var roomItemCount = getRandomInt(0, floorLevel);
+		var stairChance = getRandomInt(1, 4);
+		this.doorSide = getRandomInt(1, 0);
+		// Room expansion from a top door
+		if (type == "top") {
+			// Bottom Wall
+			var leftExp = getRandomInt(4, 10);
+			var bLeftCursor = 1;
+			for (i = 0; i < leftExp; i++) {
+				this.wallTile.push(new Rectangle((playerX - 2) - (bLeftCursor * this.cellSize), playerY - 2, this.cellSize, this.cellSize)); 
+				tempTile = new Rectangle((playerX) - (bLeftCursor * this.cellSize), playerY, this.cellSize - 5, this.cellSize - 5);
+				
+				for (n = 0; n < this.roomSpace.length; n++) {
+					if (tempTile.Intersects(this.roomSpace[n])) {
+						this.wallTile.pop();
+					}
+				}
+				bLeftCursor += 1;
+			}
+			
+			var rightExp = getRandomInt(4, 10);
+			var bRightCursor = 1;
+			for (i = 0; i < rightExp; i++) {
+				this.wallTile.push(new Rectangle((playerX - 2) + (bRightCursor * this.cellSize), playerY - 2, this.cellSize, this.cellSize)); 
+				tempTile = new Rectangle((playerX) + (bRightCursor * this.cellSize), playerY, this.cellSize - 2, this.cellSize - 2);
+				
+				for (n = 0; n < this.roomSpace.length; n++) {
+					if (tempTile.Intersects(this.roomSpace[n])) {
+						this.wallTile.pop();
+					}
+				}
+				bRightCursor += 1;
+			}
+			
+			// Top Wall
+			var newHeight = getRandomInt(8, 16);
+			var topWidth = leftExp + rightExp + 1;
+			var topCursor = 0;
+			for (i = 0; i < topWidth; i++) {
+				this.wallTile.push(new Rectangle(((playerX - 2) - (leftExp * this.cellSize) + (topCursor * this.cellSize)), (playerY - 2) - (newHeight * this.cellSize), this.cellSize, this.cellSize)); 
+				tempTile = new Rectangle(((playerX - 2) - (leftExp * this.cellSize) + (topCursor * this.cellSize)), (playerY - 2) - (newHeight * this.cellSize), this.cellSize - 2, this.cellSize - 2);
+				
+				for (n = 0; n < this.roomSpace.length; n++) {
+					if (tempTile.Intersects(this.roomSpace[n])) {
+						this.wallTile.pop();
+					}
+				}
+				topCursor += 1;
+			}
+			
+			// Left Wall
+			var leftCursor = 0;
+			for (i = 0; i < newHeight; i++) {
+				this.wallTile.push(new Rectangle((playerX - 2) - (leftExp * this.cellSize), (playerY - 2) - (leftCursor * this.cellSize), this.cellSize, this.cellSize));
+				tempTile = new Rectangle((playerX - 2) - (leftExp * this.cellSize), (playerY - 2) - (leftCursor * this.cellSize), this.cellSize - 2, this.cellSize - 2);
+				
+				for (n = 0; n < this.roomSpace.length; n++) {
+					if (tempTile.Intersects(this.roomSpace[n])) {
+						this.wallTile.pop();
+					}
+				}
+				leftCursor += 1;
+			}
+			
+			// Right Wall
+			var rightCursor = 0;
+			for (i = 0; i < newHeight; i++) {
+				this.wallTile.push(new Rectangle((playerX - 2) + (rightExp * this.cellSize), (playerY - 2) - (rightCursor * this.cellSize), this.cellSize, this.cellSize));
+				tempTile = new Rectangle((playerX - 2) + (rightExp * this.cellSize), (playerY - 2) - (rightCursor * this.cellSize), this.cellSize - 2, this.cellSize - 2);
+				
+				for (n = 0; n < this.roomSpace.length; n++) {
+					if (tempTile.Intersects(this.roomSpace[n])) {
+						this.wallTile.pop();
+					}
+				}
+				rightCursor += 1;
+			}
+			
+			var newRoomX = (playerX - 2) - (leftExp * this.cellSize);
+			var newRoomY = (playerY - 2) - (newHeight * this.cellSize);
+			var newRoomWidth = topWidth;
+			var newRoomHeight = newHeight;
+			
+		}
+		
+		// Room expansion from a bottom door.
+		if (type == "bottom") {
+			// Top Wall
+			var leftExp = getRandomInt(4, 10);
+			var bLeftCursor = 1;
+			for (i = 0; i < leftExp; i++) {
+				this.wallTile.push(new Rectangle((playerX - 2) - (bLeftCursor * this.cellSize), playerY - 2, this.cellSize, this.cellSize)); 
+				tempTile = new Rectangle((playerX) - (bLeftCursor * this.cellSize), playerY, this.cellSize - 5, this.cellSize - 5);
+				
+				for (n = 0; n < this.roomSpace.length; n++) {
+					if (tempTile.Intersects(this.roomSpace[n])) {
+						this.wallTile.pop();
+					}
+				}
+				bLeftCursor += 1;
+			}
+			
+			var rightExp = getRandomInt(4, 10);
+			var bRightCursor = 1;
+			for (i = 0; i < rightExp; i++) {
+				this.wallTile.push(new Rectangle((playerX - 2) + (bRightCursor * this.cellSize), playerY - 2, this.cellSize, this.cellSize)); 
+				tempTile = new Rectangle((playerX) + (bRightCursor * this.cellSize), playerY, this.cellSize - 5, this.cellSize - 5);
+				
+				for (n = 0; n < this.roomSpace.length; n++) {
+					if (tempTile.Intersects(this.roomSpace[n])) {
+						this.wallTile.pop();
+					}
+				}
+				bRightCursor += 1;
+			}
+			
+			// Bottom Wall
+			var newHeight = getRandomInt(8, 16);
+			var topWidth = leftExp + rightExp + 1;
+			var topCursor = 0;
+			for (i = 0; i < topWidth; i++) {
+				this.wallTile.push(new Rectangle(((playerX - 2) - (leftExp * this.cellSize) + (topCursor * this.cellSize)), (playerY - 2) + (newHeight * this.cellSize), this.cellSize, this.cellSize)); 
+				tempTile = new Rectangle(((playerX) - (leftExp * this.cellSize) + (topCursor * this.cellSize)), (playerY) + (newHeight * this.cellSize), this.cellSize - 5, this.cellSize - 5);
+				
+				for (n = 0; n < this.roomSpace.length; n++) {
+					if (tempTile.Intersects(this.roomSpace[n])) {
+						this.wallTile.pop();
+					}
+				}
+				topCursor += 1;
+			}
+			
+			// Left Wall
+			var leftCursor = 0;
+			for (i = 0; i < newHeight; i++) {
+				this.wallTile.push(new Rectangle((playerX - 2) - (leftExp * this.cellSize), (playerY - 2) + (leftCursor * this.cellSize), this.cellSize, this.cellSize));
+				tempTile = new Rectangle((playerX) - (leftExp * this.cellSize), (playerY) + (leftCursor * this.cellSize), this.cellSize - 5, this.cellSize - 5);
+
+				for (n = 0; n < this.roomSpace.length; n++) {
+					if (tempTile.Intersects(this.roomSpace[n])) {
+						this.wallTile.pop();
+					}
+				}
+				leftCursor += 1;
+			}
+			// Right Wall
+			var rightCursor = 0;
+			for (i = 0; i < newHeight; i++) {
+				this.wallTile.push(new Rectangle((playerX - 2) + (rightExp * this.cellSize), (playerY - 2) + (rightCursor * this.cellSize), this.cellSize, this.cellSize));
+				tempTile = new Rectangle((playerX) + (rightExp * this.cellSize), (playerY) + (rightCursor * this.cellSize), this.cellSize - 5, this.cellSize - 5);
+				
+				for (n = 0; n < this.roomSpace.length; n++) {
+					if (tempTile.Intersects(this.roomSpace[n])) {
+						this.wallTile.pop();
+					}
+				}
+				rightCursor += 1;
+			}
+			
+			var newRoomX = (playerX - 2) - (leftExp * this.cellSize);
+			var newRoomY = (playerY - 2);
+			var newRoomWidth = topWidth;
+			var newRoomHeight = newHeight;
+		}
+		
+		// Room expansion from left door.
+		if (type == "left") {
+			// Right Wall
+			var upExp = getRandomInt(4, 8);
+			var upCursor = 0;
+			for (i = 0; i < upExp; i++) {
+				this.wallTile.push(new Rectangle(playerX - 2, (playerY - 2) - this.cellSize - (upCursor * this.cellSize), this.cellSize, this.cellSize));
+				tempTile = new Rectangle(playerX, (playerY) - this.cellSize - (upCursor * this.cellSize), this.cellSize - 5, this.cellSize - 5);
+				
+				for (n = 0; n < this.roomSpace.length; n++) {
+					if (tempTile.Intersects(this.roomSpace[n])) {
+						this.wallTile.pop();
+					}
+				}
+				upCursor += 1;
+			}
+			var downExp = getRandomInt(4, 8);
+			var downCursor = 0;
+			for (i = 0; i < downExp; i++) {
+				this.wallTile.push(new Rectangle(playerX - 2, (playerY - 2) + this.cellSize + (downCursor * this.cellSize), this.cellSize, this.cellSize));
+				tempTile = new Rectangle(playerX, (playerY) + this.cellSize + (downCursor * this.cellSize), this.cellSize - 5, this.cellSize - 5);
+				
+				for (n = 0; n < this.roomSpace.length; n++) {
+					if (tempTile.Intersects(this.roomSpace[n])) {
+						this.wallTile.pop();
+					}
+				}
+				downCursor += 1;
+			}
+			
+			// Left Wall
+			var newWidth = getRandomInt(8, 16);
+			var newHeight = upExp + downExp + 1;
+			var leftCursor = 0;
+			for (i = 0; i < newHeight; i++) {
+				this.wallTile.push(new Rectangle((playerX - 2) - (newWidth * this.cellSize), (playerY - 2) + (downExp * this.cellSize) - (leftCursor * this.cellSize), this.cellSize, this.cellSize));
+				tempTile = new Rectangle((playerX) - (newWidth * this.cellSize), (playerY) + (downExp * this.cellSize) - (leftCursor * this.cellSize), this.cellSize - 5, this.cellSize - 5);
+				
+				for (n = 0; n < this.roomSpace.length; n++) {
+					if (tempTile.Intersects(this.roomSpace[n])) {
+						this.wallTile.pop();
+					}
+				}
+				leftCursor += 1;
+			}
+			
+			// Top Wall
+			var topCursor = 0;
+			for (i = 0; i < newWidth; i++) {
+				this.wallTile.push(new Rectangle((playerX - 2) - (newWidth * this.cellSize) + (topCursor * this.cellSize), (playerY - 2) - (upExp * this.cellSize), this.cellSize, this.cellSize));
+				tempTile = new Rectangle((playerX) - (newWidth * this.cellSize) + (topCursor * this.cellSize), (playerY) - (upExp * this.cellSize), this.cellSize - 5, this.cellSize - 5);
+				
+				for (n = 0; n < this.roomSpace.length; n++) {
+					if (tempTile.Intersects(this.roomSpace[n])) {
+						this.wallTile.pop();
+					}
+				}
+				topCursor += 1;
+			}
+			
+			// Bottom Wall
+			var bottomCursor = 0;
+			for (i = 0; i < newWidth; i++) {
+				this.wallTile.push(new Rectangle((playerX - 2) - (newWidth * this.cellSize) + (bottomCursor * this.cellSize), (playerY - 2) + (downExp * this.cellSize), this.cellSize, this.cellSize));
+				tempTile = new Rectangle((playerX) - (newWidth * this.cellSize) + (bottomCursor * this.cellSize), (playerY) + (downExp * this.cellSize), this.cellSize - 5, this.cellSize - 5);
+				
+				for (n = 0; n < this.roomSpace.length; n++) {
+					if (tempTile.Intersects(this.roomSpace[n])) {
+						this.wallTile.pop();
+					}
+				}
+				bottomCursor += 1;
+			}
+			
+			var newRoomX = (playerX - 2) - (newWidth * this.cellSize);
+			var newRoomY = (playerY - 2) - (upExp * this.cellSize);
+			var newRoomWidth = newWidth;
+			var newRoomHeight = newHeight;
+		}
+		
+		// Expand from right door.
+		if (type == "right") {
+			// Right Wall
+			var upExp = getRandomInt(4, 8);
+			var upCursor = 0;
+			for (i = 0; i < upExp; i++) {
+				this.wallTile.push(new Rectangle(playerX - 2, (playerY - 2) - this.cellSize - (upCursor * this.cellSize), this.cellSize, this.cellSize));
+				tempTile = new Rectangle(playerX, (playerY) - this.cellSize - (upCursor * this.cellSize), this.cellSize - 5, this.cellSize - 5);
+				
+				for (n = 0; n < this.roomSpace.length; n++) {
+					if (tempTile.Intersects(this.roomSpace[n])) {
+						this.wallTile.pop();
+					}
+				}
+				upCursor += 1;
+			}
+			var downExp = getRandomInt(4, 8);
+			var downCursor = 0;
+			for (i = 0; i < downExp; i++) {
+				this.wallTile.push(new Rectangle(playerX - 2, (playerY - 2) + this.cellSize + (downCursor * this.cellSize), this.cellSize, this.cellSize));
+				tempTile = new Rectangle(playerX, (playerY) + this.cellSize + (downCursor * this.cellSize), this.cellSize - 5, this.cellSize - 5);
+				
+				for (n = 0; n < this.roomSpace.length; n++) {
+					if (tempTile.Intersects(this.roomSpace[n])) {
+						this.wallTile.pop();
+					}
+				}
+				downCursor += 1;
+			}
+			
+			// Right Wall
+			var newWidth = getRandomInt(8, 16);
+			var newHeight = upExp + downExp + 1;
+			var leftCursor = 0;
+			for (i = 0; i < newHeight; i++) {
+				this.wallTile.push(new Rectangle((playerX - 2) + (newWidth * this.cellSize), (playerY - 2) + (downExp * this.cellSize) - (leftCursor * this.cellSize), this.cellSize, this.cellSize));
+				tempTile = new Rectangle((playerX) + (newWidth * this.cellSize), (playerY) + (downExp * this.cellSize) - (leftCursor * this.cellSize), this.cellSize - 5, this.cellSize - 5);
+				
+				for (n = 0; n < this.roomSpace.length; n++) {
+					if (tempTile.Intersects(this.roomSpace[n])) {
+						this.wallTile.pop();
+					}
+				}
+				leftCursor += 1;
+			}
+			
+			// Top Wall
+			var topCursor = 0;
+			for (i = 0; i < newWidth; i++) {
+				this.wallTile.push(new Rectangle((playerX - 2) + (newWidth * this.cellSize) - (topCursor * this.cellSize), (playerY - 2) - (upExp * this.cellSize), this.cellSize, this.cellSize));
+				tempTile = new Rectangle((playerX) + (newWidth * this.cellSize) - (topCursor * this.cellSize), (playerY) - (upExp * this.cellSize), this.cellSize - 5, this.cellSize - 5);
+				
+				for (n = 0; n < this.roomSpace.length; n++) {
+					if (tempTile.Intersects(this.roomSpace[n])) {
+						this.wallTile.pop();
+					}
+				}
+				topCursor += 1;
+			}
+			
+			// Bottom Wall
+			var bottomCursor = 0;
+			for (i = 0; i < newWidth; i++) {
+				this.wallTile.push(new Rectangle((playerX - 2) + (newWidth * this.cellSize) - (bottomCursor * this.cellSize), (playerY - 2) + (downExp * this.cellSize), this.cellSize, this.cellSize));
+				tempTile = new Rectangle((playerX) + (newWidth * this.cellSize) - (bottomCursor * this.cellSize), (playerY) + (downExp * this.cellSize), this.cellSize - 5, this.cellSize - 5);
+				
+				for (n = 0; n < this.roomSpace.length; n++) {
+					if (tempTile.Intersects(this.roomSpace[n])) {
+						this.wallTile.pop();
+					}
+				}
+				bottomCursor += 1;
+			}
+			
+			var newRoomX = (playerX - 2);
+			var newRoomY = (playerY - 2) - (upExp * this.cellSize);
+			var newRoomWidth = newWidth;
+			var newRoomHeight = newHeight;
+		}
+		
+		// New room stair generation
+		if (stairChance == 4) {
+			var stairX = getRandomInt(2 , newRoomWidth - 2);
+			var stairY = getRandomInt(2, newRoomHeight - 2);
+			this.stairTile.push(new Rectangle(newRoomX + (stairX * this.cellSize), newRoomY + (stairY * this.cellSize), this.cellSize, this.cellSize));
+		}
+		
+		// New room door generation
+		if (stairChance != 4) {
+			if (newRoomWidth <= newRoomHeight) {
+				this.doorLocation = getRandomInt(2, newRoomWidth - 2);
+			} else {
+				this.doorLocation = getRandomInt(2, newRoomHeight - 2);
+			}
+			// Top
+			if (type == "top") {
+				this.doorTile.push(new Rectangle(newRoomX + (this.doorLocation * this.cellSize) + 1, newRoomY + 1, this.cellSize - 2 , this.cellSize - 2));
+				this.doorType.push("top");
+			} 
+			// Bottom
+			else if (type == "bottom") {
+				this.doorTile.push(new Rectangle(newRoomX + (this.doorLocation * this.cellSize) + 1, newRoomY + 1 + (newRoomHeight * this.cellSize), this.cellSize - 2 , this.cellSize - 2));
+				this.doorType.push("bottom");
+			}
+			// Left
+			if (type == "left") {
+				this.doorTile.push(new Rectangle(newRoomX + 1, newRoomY + (this.doorLocation * this.cellSize) + 1, this.cellSize - 2 , this.cellSize - 2));
+				this.doorType.push("left");
+			} 
+			// Right
+			else if (type == "right") {
+				this.doorTile.push(new Rectangle(newRoomX + ((newRoomWidth * this.cellSize)), newRoomY + (this.doorLocation * this.cellSize) + 1, this.cellSize - 2 , this.cellSize - 2));
+				this.doorType.push("right");
+			}
+		}
+		
+		// Generate floor tiles
+		for (i = 0; i < newRoomWidth; i++) {
+			for (j = 0; j < newRoomHeight; j++) {
+				this.floorTile.push(new Rectangle(newRoomX + (i * this.cellSize), newRoomY + (j * this.cellSize), this.cellSize, this.cellSize));
+			}
+		}
+		
+		// Create roomSpace
+		var newRoomTotalWidth = newRoomWidth * this.cellSize;
+		var newRoomTotalHeight = newRoomHeight * this.cellSize;
+		this.roomSpace.push(new Rectangle(newRoomX, newRoomY, newRoomTotalWidth, newRoomTotalHeight));
+		
+		
+		// New room item generation
+		for (i = 0; i < roomItemCount; i++) {
+			var pickItemIndex = getRandomInt(0, (worldItems.length - 1));
+			var pickItem = worldItems[pickItemIndex];
+			var itemX = getRandomInt(2 , newRoomWidth - 2);
+			var itemY = getRandomInt(2, newRoomHeight - 2);
+			this.itemTile.push(new Rectangle(newRoomX + (itemX * this.cellSize), newRoomY + (itemY * this.cellSize), this.cellSize, this.cellSize));
+			this.itemTile[this.itemTile.length - 1].color = worldItems[pickItemIndex].color;
+			this.itemList.push(pickItem);
+		}
+		
+		// Color new floor tiles
+		for (i = 0; i < this.floorTile.length; i++) {
+			this.floorTile[i].color = new Color(200, 200, 200, 1);
+		}
+		// Color new room tiles
+		for (i = 0; i < this.wallTile.length; i++) {
+			this.wallTile[i].color = new Color(0,0,0,1);
+		}
+		// Color new door tiles
+		for (i = 0; i < this.doorTile.length; i++) {
+			this.doorTile[i].color = new Color(255, 0, 0, 1);
+		}
+		// Color new stair tiles
+		for (i = 0; i < this.stairTile.length; i++) {
+			this.stairTile[i].color = new Color(0, 255, 0, 1);
+		}
+		// Color Items
+		for (i = 0; i < this.itemTile.length; i++) {
+			//this.itemTile[i].color = new Color(0, 0, 255, 1);
+		}
+		// Color Spaces
+		for (i = 0; i < this.roomSpace.length; i++) {
+			this.roomSpace[i].color = new Color(0, 0, 0, 0.5);
+		}
+	}
+	
+	// Renders the room.
+	this.Draw = function() {
+		this.drawWidth = this.x;
+		this.drawHeight = this.y;
+		for (i = 0; i < this.floorTile.length; i++) {
+			this.floorTile[i].Draw(ctx);
+		}
+		for (i = 0; i < this.wallTile.length; i++) {
+			this.wallTile[i].Draw(ctx);
+		}
+		for (i = 0; i < this.stairTile.length; i++) {
+			this.stairTile[i].Draw(ctx);
+		}
+		for (i = 0; i < this.doorTile.length; i++) {
+			this.doorTile[i].Draw(ctx);
+		}
+		for (i = 0; i < this.itemTile.length; i++) {
+			this.itemTile[i].Draw(ctx);
+		}
+		/*
+		for (i = 0; i < this.roomSpace.length; i++) {
+			this.roomSpace[i].Draw(ctx);
+		}
+		*/
+		/*
+		for (i = 0; i < this.fogTile.length; i++) {
+			this.fogTile[i].Draw(ctx);
+		}
+		*/
+	}
+}
+
+// Begin Game Code
+// ---------------------------------------
+var gameCell = 16;
+var currentRoom;
+
+// Generate a random field within a specified range
+var rooms = new Array();
+rooms.push(new Room(300, 150, 9, 18, gameCell));
+currentRoom = rooms[0];
+currentRoom.generateFloor();
+
+// Player
+var player = new Player();
+player.makePlayer(currentRoom.x + (gameCell * 4) + 2, currentRoom.y + (gameCell * 4) + 2, (gameCell - 4), (gameCell - 4));
+
+// User Interface
+var actionBar = new Ui(0, 550, 800, 50);
+var invMenu = new Ui(550, 50, 200, 350, "inv");
+invMenu.rect.color = new Color(100, 100, 100, 0.5);
+var textBox = new Ui(1, 457, 400, 142, "textBox");
+textBox.rect.color = new Color(100, 100, 100, 0.5);
+textBox.toggle = true;
+
+// Controls
+var lookTog = true;
+var takeTog;
+
+// Turn tracker
+var playerTurn = true;
+var enemyTurn = false;
+var turnCount = 0;
+var prevPlayer = new Vector2;
+
+// Floor Tracker
+var floorLevel = 1;
+var floorToggle = new Array;
+
+// World Items
+var worldItems = new Array;
+
+// Items
+var iPotMed = new Item("Potato Medallion", "food", 1, 1);
+iPotMed.color = new Color(184, 124, 11, 1);
+
+var iPezSlice = new Item("Pizza Slice", "food", 1, 1);
+iPezSlice.color = new Color(255, 140, 0, 1);
+
+var iHorseStick = new Item("No Longer Sticky Sticker of a Horse", "sticker", 1, 1);
+iHorseStick.color = new Color(139, 69, 19, 1);
+
+var iGoldCoin = new Item("Gold Coin", "gold", 1, 1);
+iGoldCoin.color = new Color(255, 218, 0, 1);
+
+var iHecChair = new Item("Hector Salamanca's Chair?", "breaking bad", 1, 1);
+iHecChair.color = new Color (180, 180, 180, 1);
+
+// Game Update Loop
+function update() {
+	
+	// Checks to see if a stair tile is ontop of a wall tile.  If so, it cuts it out.
+	for (i = 0; i < currentRoom.wallTile.length; i++) {
+		for (j = 0; j < currentRoom.doorTile.length; j++) {
+			if (currentRoom.wallTile[i].Intersects(currentRoom.doorTile[j])) {
+				currentRoom.wallTile.RemoveAt(i);
+			}
+		}
+	}
+	
+	// Handles the collision with walls.
+	if (playerTurn == true) {
+		prevPlayer.x = player.rect.x;
+		prevPlayer.y = player.rect.y;
+		player.Move();
+		for (i = 0; i < currentRoom.wallTile.length; i++) {
+			if (player.rect.Intersects(currentRoom.wallTile[i])) {
+				player.rect.x = prevPlayer.x;
+				player.rect.y = prevPlayer.y;
+				player.Move();
+			}
+		}
+	}
+	
+	// Handles the clearing of fog by the player
+	for (i = 0; i < currentRoom.fogTile.length; i++) {
+		if ((player.rect.x - 128 < currentRoom.fogTile[i].x) && (player.rect.x + 96 > currentRoom.fogTile[i].x) &&
+			(player.rect.y - 128 < currentRoom.fogTile[i].y) && (player.rect.y + 96 > currentRoom.fogTile[i].y)) {
+			currentRoom.fogTile.RemoveAt(i);
+		}
+	}
+	
+	// Handles the player intersection with the stairs and generation of new floors.
+	for (i = 0; i < currentRoom.stairTile.length; i++) {
+		if (player.rect.Intersects(currentRoom.stairTile[i])) {
+			rooms.push(new Room(currentRoom.stairTile[i].x - (gameCell + 1), currentRoom.stairTile[i].y - (gameCell + 1), 10, 25, gameCell))
+			rooms[rooms.length - 1].generateFloor();
+			currentRoom = rooms[rooms.length - 1];
+			player.rect.x = (currentRoom.x + (gameCell * 4) + 2);
+			player.rect.y = (currentRoom.y + (gameCell * 4) + 2);
+			floorLevel += 1;
+			textBox.addText("Welcome to floor " + floorLevel);
+		}
+	}
+	
+	// Handles the player intersection with doors and generation of new rooms.
+	for (i = 0; i < currentRoom.doorTile.length; i ++) {
+		if (player.rect.Intersects(currentRoom.doorTile[i])) {
+			var sideDoor = currentRoom.doorType[i];
+			currentRoom.doorTile.RemoveAt(i);
+			currentRoom.doorType.RemoveAt(i);
+			currentRoom.AddRoom(player.rect.x, player.rect.y, sideDoor);
+		}
+	}
+	
+	// Handles the player intersection with items.
+	for (i = 0; i < currentRoom.itemTile.length; i++) {
+	var tempVar = "There is a " + currentRoom.itemList[i].name + " on the ground.";
+	var tempVal = textBox.contents.length - 1;
+		if (player.rect.Intersects(currentRoom.itemTile[i]) && input.t == true) {
+			player.inventory.push(currentRoom.itemList[i]);
+			textBox.addText("You have taken a " + currentRoom.itemList[i].name + "!");
+			currentRoom.itemList.RemoveAt(i);
+			currentRoom.itemTile.RemoveAt(i);
+		}
+		else if (player.rect.Intersects(currentRoom.itemTile[i]) && textBox.contents[tempVal] != tempVar) {
+			textBox.addText("There is a " + currentRoom.itemList[i].name + " on the ground.");
+			lookTog = false;
+		}
+	}
+	
+	// Action Bar Toggle
+	if (input.b == true && actionBar.toggle == false && actionBar.inputRelease == true) {
+		actionBar.toggle = true;
+		actionBar.inputRelease = false;
+	}
+	else if (input.b == true && actionBar.toggle == true && actionBar.inputRelease == true) {
+		actionBar.toggle = false;
+		actionBar.inputRelease = false;
+	}
+	if (input.b == false) {
+		actionBar.inputRelease = true;
+	}
+	
+	// Inventory Toggle
+	if (input.i == true && invMenu.toggle == false && invMenu.inputRelease == true) {
+		invMenu.toggle = true;
+		invMenu.inputRelease = false;
+	}
+	else if (input.i == true && invMenu.toggle == true && invMenu.inputRelease == true) {
+		invMenu.toggle = false;
+		invMenu.inputRelease = false;
+	}
+	if (input.i == false) {
+		invMenu.inputRelease = true;
+	}
+	
+	// Control Toggles (Keeps track of keyUps)
+	// Look Toggle
+	for (i = 0; i < currentRoom.itemTile.length; i++) {
+		if (!player.rect.Intersects(currentRoom.itemTile[i])) {
+			lookTog = true;
+		}
+	}
+	
+	
+	// Item List:
+	if (floorLevel == 1) {
+		worldItems = [iHorseStick, iGoldCoin];
+	} 
+	else if (floorLevel == 2) {
+		worldItems = [iGoldCoin, iPezSlice];
+	}
+	else {
+		worldItems = [iHorseStick, iGoldCoin, iPezSlice, iHecChair];
+	}
+	
+}
+
+function draw() {
+	// Clear ctx canvas
+	ctx.save();
+	ctx.setTransform(1, 0, 0, 1, 0, 0);
+	ctx.clearRect(0, 0, canvas.width, canvas.height);
+	ctx.restore();
+	
+	// Drawing to the ctx canvas
+	currentRoom.Draw();
+	player.Draw(ctx);
+	
+	// Clear ctxUi canvas
+	ctxUi.clearRect(0, 0, canvasUi.width, canvasUi.height);
+	
+	// Drawing to the ctxUi canvas
+	actionBar.Draw();
+	invMenu.Draw();
+	textBox.Draw();
+}
+/*
+for (i = 0; i < 10; i++) {
+	textBox.addText("Testing!");
+}
+*/
+
+requestAnimationFrame(animate);    // Start the animation
